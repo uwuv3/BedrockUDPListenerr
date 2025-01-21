@@ -7,6 +7,7 @@ const ms = require("ms")
 const logStream = fs.createWriteStream('log.txt', { flags: 'a' });
 const serverIp = "localhost";
 const serverPort = 9999;
+const net = require('net');
 console.log = (...args) => {
     log(`[LOG] ${new Date().toISOString()} - ${args.join(' ')}`);
     logStream.write(`[LOG] ${new Date().toISOString()} - ${args.join(' ')}\n`);
@@ -29,37 +30,64 @@ let udpPorts = [];
 let skipPorts = new Set();
 let connectedPort;
 let lastMessage = Date.now();
-const socketServer = dgram.createSocket('udp4');
+
+const socket = new net.Socket();
 (async () => {
-    await new Promise((a) => {
-        socketServer.send(Buffer.from("pakethello").toString("base64"), serverPort, serverIp, (err) => {
-            if (err) console.error(err);
-            else console.log('Mesaj gönderildi');
+    await new Promise((resolve, reject) => {
+        let connect = false;
+
+        socket.connect(serverPort, serverIp, () => {
+            console.log('Sunucuya bağlandım');
+
+            socket.write(Buffer.from("pakethello").toString("base64"), (err) => {
+                if (err) {
+                    console.error(err);
+                    reject(err);
+                } else {
+                    console.log('Mesaj gönderildi');
+                }
+            });
         });
-        let connect = false
-        socketServer.on('message', (msg, rinfo) => {
-            connect = true
-            console.debug(`Received message: ${msg} from  server`);
-            if (msg == "ping") a();
+
+        socket.on('data', (msg) => {
+            connect = true;
+            console.debug(`Alınan mesaj: ${msg.toString()} sunucudan`);
+
             const decodedBuffer = Buffer.from(msg.toString(), 'base64');
-
             const header = decodedBuffer.subarray(0, 10);
-        
             const packet = decodedBuffer.subarray(10);
-            if(header == "packetwhor") console.log("Sen kimsin lan") || process.exit();
-            if(header == "packetgent") console.log("Askımdanmesajvar")
-        });
-        socketServer.on('listening', () => {
-            const address = socketServer.address();
-            setTimeout(() => { if (!connect) console.error("Sunucuya bağlanamadım") || process.exit() }, 5000)
 
-            console.debug(`Listening Server on PORT ${JSON.stringify(address)}`);
+            if (header.toString() === "packetwhor") {
+                console.log("Sen kimsin lan");
+                process.exit();
+            }
+
+            if (header.toString() === "packetgent") {
+                console.log("Askımdanmesajvar");
+            }
+
+            if (decodedBuffer.toString() === "ping") {
+                console.log("niggers")
+                resolve();
+            }
         });
-        socketServer.on("error", (text) => {
-            console.error(text);
-            process.exit()
+
+        socket.on('error', (err) => {
+            console.error(`Hata: ${err.message}`);
+            reject(err);
         });
-    })
+
+        socket.on('close', () => {
+            console.log('Bağlantı kapandı');
+        });
+
+        setTimeout(() => {
+            if (!connect) {
+                console.error("Sunucuya bağlanamadım");
+                process.exit();
+            }
+        }, 5000);
+    });
 
     const exec = execSync(`CheckNetIsolation LoopbackExempt -a -n=\"Microsoft.MinecraftUWP_8wekyb3d8bbwe\"`);
     console.log(exec.toString());
@@ -90,11 +118,11 @@ function onPacketRecieve(packet, rinfo) {
     //250 -> connecting
 
     // console.log(type)
-   const buffer = Buffer.concat([
-  Buffer.from("packetsend"),
-  Buffer.from(packet)
-]);
-    socketServer.send(buffer.toString("base64"), serverPort, serverIp)
+    const buffer = Buffer.concat([
+        Buffer.from("packetsend"),
+        Buffer.from(packet)
+    ]);
+    socket.write(buffer.toString("base64"))
 }
 function listenOnUDPPort(port) {
     const server = dgram.createSocket('udp4');

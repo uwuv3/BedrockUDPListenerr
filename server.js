@@ -1,56 +1,77 @@
-const dgram = require('dgram');
-const server = dgram.createSocket('udp4');
+const net = require('net');
 const port = 9999;
-let adresses = new Set()
-server.on('message', (msg, rinfo) => {
-    console.log(`Alınan mesaj: ${msg} ${rinfo.address}:${rinfo.port}`);
+let addresses = new Set();
 
-    const decodedBuffer = Buffer.from(msg.toString(), 'base64');
+const server = net.createServer((socket) => {
+    console.log(`Yeni bir bağlantı: ${socket.remoteAddress}:${socket.remotePort}`);
 
-    const header = decodedBuffer.subarray(0, 10);
+    socket.on('data', (data) => {
+        console.log(`Alınan mesaj: ${data} ${socket.remoteAddress}:${socket.remotePort}`);
 
-    const packet = decodedBuffer.subarray(10);
+        const decodedBuffer = Buffer.from(data.toString(), 'base64');
+        const header = decodedBuffer.subarray(0, 10);
+        const packet = decodedBuffer.subarray(10);
 
-    if (header == "pakethello") {
-        if (adresses.has(`${rinfo.address}:${rinfo.port}`)) return;
-        server.send('ping', rinfo.port, rinfo.address, (err) => {
-            adresses.add(`${rinfo.address}:${rinfo.port}`);
-            if (err) console.error(err);
-            else console.log('Cevap gönderildi');
-        });
-    } else if (header == "packetsend") {
-        if(!adresses.has(`${rinfo.address}:${rinfo.port}`)) {
-            const buffer = Buffer.concat([
-                Buffer.from("packetwhor")
-              ]);
-            return  server.send(buffer.toString("base64"), rinfo.port, rinfo.address, (err) => {
-                if (err) console.error(err);
-                else console.log('Kim bu la');
-            });
-        }
-        console.log('Header:', header.toString());
-        console.log('Packet:', packet.toString());
-        adresses.forEach(x=>{
-            if(`${rinfo.address}:${rinfo.port}` == x) return;
-            
-   const buffer = Buffer.concat([
-    Buffer.from("packetgent"),
-    Buffer.from(packet)
-  ]);
-            server.send(buffer.toString("base64"), x.port, x.address, (err) => {
+        if (header.toString() === "pakethello") {
+            if (addresses.has(`${socket.remoteAddress}:${socket.remotePort}`)) return;
+            addresses.add(`${socket.remoteAddress}:${socket.remotePort}`);
+
+            socket.write(Buffer.from('ping').toString('base64'), (err) => {
                 if (err) console.error(err);
                 else console.log('Cevap gönderildi');
             });
-        })
-    }
 
+        } else if (header.toString() === "packetsend") {
+            if (!addresses.has(`${socket.remoteAddress}:${socket.remotePort}`)) {
+                const buffer = Buffer.concat([
+                    Buffer.from("packetwhor")
+                ]);
+                socket.write(buffer.toString('base64'), (err) => {
+                    if (err) console.error(err);
+                    else console.log('Kim bu la');
+                });
+                return;
+            }
+
+            console.log('Header:', header.toString());
+            console.log('Packet:', packet.toString());
+
+            addresses.forEach((address) => {
+                const [remoteAddress, remotePort] = address.split(':');
+                if (`${socket.remoteAddress}:${socket.remotePort}` === address) return;
+
+                const buffer = Buffer.concat([
+                    Buffer.from("packetgent"),
+                    Buffer.from(packet)
+                ]);
+
+                // Yeni bir TCP soket bağlantısı aç
+                const client = net.createConnection({ host: remoteAddress, port: remotePort }, () => {
+                    client.write(buffer.toString('base64'), (err) => {
+                        if (err) console.error(err);
+                        else console.log('Mesaj iletildi');
+                    });
+                });
+
+                client.on('error', (err) => {
+                    console.error(`Soket hatası: ${err.message}`);
+                });
+
+                client.end();
+            });
+        }
+    });
+
+    socket.on('error', (err) => {
+        console.error(`Bağlantı hatası: ${err.message}`);
+    });
+
+    socket.on('end', () => {
+        console.log(`Bağlantı kapandı: ${socket.remoteAddress}:${socket.remotePort}`);
+        addresses.delete(`${socket.remoteAddress}:${socket.remotePort}`);
+    });
 });
 
-server.on('error', (err) => {
-    console.error(`Sunucu hatası:\n${err.stack}`);
-    server.close();
-});
-
-server.bind(port, () => {
-    console.log('Sunucu dinleniyor...');
+server.listen(port, () => {
+    console.log(`Sunucu ${port} portunda dinleniyor...`);
 });

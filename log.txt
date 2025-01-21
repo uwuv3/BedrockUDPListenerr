@@ -1,0 +1,21 @@
+[LOG] 2025-01-21T19:35:02.566Z - Sunucuya bağlandım
+[LOG] 2025-01-21T19:35:02.585Z - Mesaj gönderildi
+[DEBUG] 2025-01-21T19:35:02.627Z - Alınan mesaj: cGluZw== sunucudan
+[LOG] 2025-01-21T19:35:15.892Z - Sunucuya bağlandım
+[LOG] 2025-01-21T19:35:15.895Z - Mesaj gönderildi
+[DEBUG] 2025-01-21T19:35:15.908Z - Alınan mesaj: cGluZw== sunucudan
+[ERROR] 2025-01-21T19:36:04.138Z - Hata: read ECONNRESET
+[ERROR] 2025-01-21T19:36:04.206Z - (node:8448) UnhandledPromiseRejectionWarning: Error: read ECONNRESET
+    at TCP.onStreamRead (internal/stream_base_commons.js:111:27)
+[ERROR] 2025-01-21T19:36:04.221Z - (node:8448) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). (rejection id: 1)
+[ERROR] 2025-01-21T19:36:04.222Z - (node:8448) [DEP0018] DeprecationWarning: Unhandled promise rejections are deprecated. In the future, promise rejections that are not handled will terminate the Node.js process with a non-zero exit code.
+[LOG] 2025-01-21T19:36:04.222Z - Bağlantı kapandı
+[LOG] 2025-01-21T19:36:12.964Z - Sunucuya bağlandım
+[LOG] 2025-01-21T19:36:12.965Z - Mesaj gönderildi
+[DEBUG] 2025-01-21T19:36:12.967Z - Alınan mesaj: cGluZw== sunucudan
+[ERROR] 2025-01-21T19:36:26.604Z - Hata: read ECONNRESET
+[ERROR] 2025-01-21T19:36:26.608Z - (node:9292) UnhandledPromiseRejectionWarning: Error: read ECONNRESET
+    at TCP.onStreamRead (internal/stream_base_commons.js:111:27)
+[ERROR] 2025-01-21T19:36:26.609Z - (node:9292) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). (rejection id: 1)
+[ERROR] 2025-01-21T19:36:26.615Z - (node:9292) [DEP0018] DeprecationWarning: Unhandled promise rejections are deprecated. In the future, promise rejections that are not handled will terminate the Node.js process with a non-zero exit code.
+[LOG] 2025-01-21T19:36:26.617Z - Bağlantı kapandı
