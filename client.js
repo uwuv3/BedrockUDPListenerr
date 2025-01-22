@@ -50,6 +50,7 @@ class ClientSide {
     onPacketServer(data) {
         const decodedBuffer = Buffer.from(data.toString(), 'base64');
         const header = decodedBuffer.subarray(0, 10);
+        const packet = decodedBuffer.subarray(10);
         if (header.toString() == "yenuromnon") {
             console.log("[CLIENT] Server Connected!")
             if (this.serverTimeout) clearTimeout(this.serverTimeout);
@@ -58,7 +59,7 @@ class ClientSide {
         if (header.toString() == "whoareyoun") {
             this.server.emit("error", "Server dont know u")
         } if (header.toString() == "userslistn") {
-            this.createUDPConnections();
+            this.createUDPConnections(parseInt(packet.toString()));
         }
     }
     onClientConnect() {
@@ -67,7 +68,8 @@ class ClientSide {
 
     }
     createUDPConnections(length) {
-    }async findMCPE() {
+    }
+    async findMCPE() {
         this.port = findMCPort();
         this.skipPorts = new Set();
         console.log(this.port)
@@ -86,8 +88,10 @@ class ClientSide {
             this.findMCPE();
         }
     }
-    
-    listenOnUDPPort(port,) {
+    onMcPacket(packet) {
+        this.server.write(makePacket("packetmcp",packet), (err) => {if(!err) console.log("Packet sended") })
+    }
+    listenOnUDPPort(port) {
         let lastMessage = Date.now();
         const server = dgram.createSocket('udp4');
     
@@ -110,6 +114,7 @@ class ClientSide {
         server.on('message', (msg, rinfo) => {
             lastMessage = Date.now() + ms("15s");
             console.debug(`Received message: ${msg} from ${rinfo.address}:${rinfo.port}`);
+            this.onMcPacket(msg)
             this.port = { port: rinfo.port, server };
         });
     

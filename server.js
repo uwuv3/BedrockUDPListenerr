@@ -25,7 +25,11 @@ class ServerSide {
                 this.sockets.add(socket);
                 console.log(`[SERVER] New user`);
             })
-         }
+         }  if(header.toString() == "packetmcp") {
+            if(!this.sockets.has(socket)) return socket.write(makePacket("whoareyou"));
+            console.log("getpacket")
+         } 
+         
     }
     createServer() {
         if (this.server && this.server.destroyed) return;
