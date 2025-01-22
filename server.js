@@ -76,7 +76,6 @@ class ServerSide {
     broadcastPacket(sender, packet) {
         const senderInfo = this.clients.get(sender);
         if (!senderInfo) return;
-        console.log(`${JSON.stringify(senderInfo)} ${}`)
  
         const data = makePacket("mcpepacket", JSON.stringify({
             from: senderInfo.address,
