@@ -76,15 +76,14 @@ class ServerSide {
     broadcastPacket(sender, packet) {
         const senderInfo = this.clients.get(sender);
         if (!senderInfo) return;
-        console.log(`${JSON.stringify(senderInfo)} ${packet.toString()}`)
+        console.log(`${JSON.stringify(senderInfo)} ${}`)
  
         const data = makePacket("mcpepacket", JSON.stringify({
             from: senderInfo.address,
             data: packet.toString()
         }));
         this.clients.forEach((_, socket) => {
-          //  if (socket !== sender)
-           socket.write(data);
+            if (socket !== sender) socket.write(data);
         });
     }
 }
