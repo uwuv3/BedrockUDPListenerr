@@ -1,203 +1,179 @@
 const { exec, execSync } = require("child_process");
-const net = require("net")
+const net = require("net");
+const dgram = require("dgram");
+const os = require("os");
+
 const serverIP = "localhost";
 const serverPort = 9999;
-const dgram = require("dgram");
-const ms = require("ms");
-const os = require("os");
-//i need to know what packet to do, because when he connects someone, other udp packets needs to be closed
-
 class ClientSide {
     constructor() {
-        openUDP();
-        this.connectClient();
+        this.udpPorts = new Map();
+        this.mcPorts = new Set();
+        this.init();
+        this.portOffsets = new Map();
+        this.skipPorts = new Set()
     }
-    connectClient() {
-        if (this.server && !this.server.destroyed) return;
-        this.server = new net.Socket();
-        this.server.connect(serverPort, serverIP, () => {
-            console.log('[CLIENT] Connected to the server');
-            this.server.write(makePacket("clientconn"), (err) => {
-                if (err) {
-                    console.error(err);
-                } else {
-                    console.log('[CLIENT] Send clienthello');
-                    this.serverTimeout = setTimeout(() => {
-                        console.log(`[CLIENT] No Data given, aborting...`);
-                        try {
-                            this.server.destroy()
-                        } catch (error) {
-                            console.log(error)
-                        }
-                        setTimeout(() => {
-                            this.connectClient();
-                        }, 1000)
-                    }, 5000)
-                }
-            });
-        });
-        this.server.on("data", (data) => {
-            this.onPacketServer(data)
-        });
-        this.server.on("error", (e) => {
-            console.log(e)
-            console.log("[CLIENT] Socket Closed, re-trying after 1 second");
-            setTimeout(() => {
-                this.connectClient();
-            }, 1000)
-        })
-    }
-    onPacketServer(data) {
-        const decodedBuffer = Buffer.from(data.toString(), 'base64');
-        const header = decodedBuffer.subarray(0, 10);
-        const packet = decodedBuffer.subarray(10);
-        if (header.toString() == "yenuromnon") {
-            console.log("[CLIENT] Server Connected!")
-            if (this.serverTimeout) clearTimeout(this.serverTimeout);
-            this.onClientConnect()
-        }
-        if (header.toString() == "whoareyoun") {
-            this.server.emit("error", "Server dont know u")
-        } if (header.toString() == "userslistn") {
-            this.createUDPConnections(parseInt(packet.toString()));
-        }
-    }
-    onClientConnect() {
-        this.findMCPE()
-        //this.server.write(makePacket("getusers"), (err) => { })
 
+    async init() {
+        await this.enableUWPLoopback();
+        this.connectTCP();
+        this.startMCPortDetection();
     }
-    createUDPConnections(length) {
+
+    async enableUWPLoopback() {
+        await exec('CheckNetIsolation LoopbackExempt -a -n="Microsoft.MinecraftUWP_8wekyb3d8bbwe"');
     }
-    async findMCPE() {
-        this.port = findMCPort();
-        this.skipPorts = new Set();
-        console.log(this.port)
-        for (const portInfo of this.port) {
-            const port = portInfo.ip.split(':')[1];
-            if (!this.skipPorts.has(port)) { 
-                this.listenOnUDPPort(port);
-            } else {
-                console.debug(`Port ${port} zaten dinleniyor, atlanıyor.`);
-            }
-        }
-    
-        await new Promise((a) => setTimeout(() => a(), 2000));
+
+    connectTCP() {
+        this.socket = new net.Socket();
         
-        if (!this.port || !this.port.port) {
-            this.findMCPE();
+        this.socket.connect(serverPort, serverIP, () => {
+            console.log('[CLIENT] Connected to server');
+            this.socket.write(makePacket("clientconn"));
+        });
+
+        this.socket.on("data", data => this.handleServerPacket(data));
+        this.socket.on("error", () => setTimeout(() => this.connectTCP(), 1000));
+    }
+
+    async startMCPortDetection() {
+        while (true) {
+            try {
+                const ports = await this.findMCPorts();
+                for (const portInfo of ports) {
+                    const port = portInfo.ip.split(':')[1];
+                    if (!this.mcPorts.has(port)) {
+                        this.listenToGamePort(port);
+                    }
+                }
+            } catch (err) {
+                console.error('[CLIENT] Port detection error:', err);
+            }
+            await new Promise(r => setTimeout(r, 5000));
         }
     }
-    onMcPacket(packet) {
-        this.server.write(makePacket("packetmcpe",packet), (err) => {if(!err) console.log("Packet sended") })
-    }
-    listenOnUDPPort(port) {
-        let lastMessage = Date.now();
-        const server = dgram.createSocket('udp4');
 
-        server.on('listening', () => {
-            const address = server.address();
-            console.debug(`Listening on UDP port ${JSON.stringify(address)}`);
-        });
-    
-        server.on('message', (msg, rinfo) => {
-            lastMessage = Date.now() + ms("15s");
-            console.debug(`Received message: ${msg} from ${rinfo.address}:${rinfo.port}`);
-            this.onMcPacket(msg)
-            this.port = { port: rinfo.port, server };
-        });
-    
-        server.on("close", () => {
-            this.port = undefined;
-        });
-    
-        server.on("error", (text) => {
-            if (text.toString().includes("EADDRINUSE")) {
-                this.skipPorts.add(port);
-                try {
-                    server.close();
-                } catch (error) {
-                    console.error("Port kapatılırken hata oluştu:", error);
-                }
-            } else {
-                this.findMCPE();
-                console.error(text);
-            }
-        });
-    
-        server.bind(port,getLocalIP(), () => { });
-        return server;
+    findMCPorts() {
+        try {
+            const tasklistOutput = execSync('tasklist /FI "IMAGENAME eq Minecraft.Windows.exe"', { encoding: 'utf-8' });
+            const minecraftPid = tasklistOutput.split('\n')
+                .find(line => line.includes('Minecraft.Windows.exe'))
+                ?.split(/\s+/)[1];
+
+            if (!minecraftPid) return [];
+
+            const netstatOutput = execSync('netstat -a -p UDP -o', { encoding: 'utf-8' });
+            return netstatOutput.split('\n')
+                .filter(line => line.includes(minecraftPid))
+                .map(line => {
+                    const match = /(\w+)\s+(\d+\.\d+\.\d+\.\d+:\d+)\s+\*\:\*\s+(\d+)/.exec(line);
+                    return match ? {
+                        type: match[1],
+                        ip: match[2],
+                        pid: match[3]
+                    } : null;
+                })
+                .filter(Boolean);
+        } catch (err) {
+            console.error('[CLIENT] Port scan error:', err);
+            return [];
+        }
     }
-    
+    listenToGamePort(port) {
+        if (this.skipPorts.has(port)) return;
+
+        const socket = dgram.createSocket('udp4');
+        
+        socket.on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                this.skipPorts.add(port);
+            }
+            socket.close();
+            this.mcPorts.delete(port);
+        });
+
+        socket.on('message', (msg) => {
+            this.socket.write(makePacket("mcpepacket", JSON.stringify({
+                data: msg.toString('base64'),
+                originalPort: port
+            })));
+        });
+
+        socket.bind(port, getLocalIP(), () => {
+            this.mcPorts.add(port);
+            this.socket.write(makePacket("portupdate", port.toString()));
+        });
+    }
+
+
+    handleServerPacket(data) {
+        try {
+            const decoded = Buffer.from(data.toString(), 'base64');
+            const header = decoded.subarray(0, 10).toString();
+            const packet = decoded.subarray(10);
+
+            switch(header) {
+                case "clientlist":
+                    this.updatePeerConnections(JSON.parse(packet));
+                    break;
+                case "mcpepacket":
+                    this.handleGamePacket(JSON.parse(packet.toString()));
+                    break;
+            }
+        } catch (err) {
+            console.error('[CLIENT] Packet handling error:', err);
+        }
+    }
+    updatePeerConnections(clients) {
+        for (const [ip] of this.udpPorts) {
+            if (!clients.some(c => c.ip === ip)) {
+                this.udpPorts.get(ip).close();
+                this.udpPorts.delete(ip);
+            }
+        }
+
+        for (const client of clients) {
+            if (!this.udpPorts.has(client.ip)) {
+                const socket = dgram.createSocket('udp4');
+                socket.bind(0, getLocalIP());
+                this.udpPorts.set(client.ip, socket);
+            }
+        }
+    }
+
+    handleGamePacket({from, data, originalPort}) {
+        const packet = Buffer.from(data, 'base64');
+        const socket = this.udpPorts.get(from);
+        if (socket) {
+            this.mcPorts.forEach(port => {
+                const offset = this.getPortOffset(from, originalPort);
+                const targetPort = parseInt(port) + offset;
+                socket.send(packet, targetPort, 'localhost');
+            });
+        }
+    }
+    getPortOffset(clientIP, originalPort) {
+        if (!this.portOffsets.has(clientIP)) {
+            // Generate unique offset for each client (0-1000 range)
+            const offset = Math.floor(Math.random() * 1000);
+            this.portOffsets.set(clientIP, offset);
+        }
+        return this.portOffsets.get(clientIP);
+    }
 }
 
-new ClientSide();
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
-    for (const iface in interfaces) {
-        for (const addr of interfaces[iface]) {
-            if (addr.family === 'IPv4' && addr.address !== '127.0.0.1') {
-                return addr.address;
-            }
-        }
+    for (const iface of Object.values(interfaces)) {
+        const ipv4 = iface.find(addr => addr.family === 'IPv4' && !addr.internal);
+        if (ipv4) return ipv4.address;
     }
     return '0.0.0.0';
 }
-function findMCPort() {
-    try {
-        const tasklistOutput = execSync('tasklist /FI "IMAGENAME eq Minecraft.Windows.exe"', { encoding: 'utf-8' });
-
-        const lines = tasklistOutput.split('\n');
-        let minecraftPid = null;
-
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes('Minecraft.Windows.exe')) {
-                const parts = lines[i].trim().split(/\s+/);
-                minecraftPid = parts[1];
-                break;
-            }
-        }
-
-        if (!minecraftPid) {
-            console.log('Minecraft UWP çalışmıyor veya bulunamadı.');
-            return []
-        }
-
-        //     console.log(`Minecraft PID bulundu: ${minecraftPid}`);
-
-        const netstatOutput = execSync('netstat -a -p UDP -o', { encoding: 'utf-8' });
-
-        const udpConnections = netstatOutput.split('\n').filter(line => line.includes(minecraftPid)).map(x => {
-            const regex = /(\w+)\s+(\d+\.\d+\.\d+\.\d+:\d+)\s+\*\:\*\s+(\d+)/;
-            const match = regex.exec(x);
-            if (match) {
-                return ({
-                    type: match[1],
-                    ip: match[2],
-                    pid: match[3]
-                });
-            }
-        })
-
-        //      console.log(`Minecraft UWP UDP Bağlantıları:\n${udpConnections.join('\n')}`);
-        return udpConnections
-
-    } catch (err) {
-        console.error('Hata oluştu:', err);
-        return []
-    }
-}
-
-function makePacket(name, msg) {
-    if (name.length > 10) return console.log(`[PACKET] ${name} is not defined`);
-    if (!msg) msg = "none";
-    const buffer = Buffer.concat([
-        Buffer.from(name),
+new ClientSide();
+function makePacket(name, msg = "") {
+    return Buffer.concat([
+        Buffer.from(name.padEnd(10)),
         Buffer.from(msg)
-    ]);
-    return buffer.toString("base64")
-}
-
-function openUDP() {
-    exec(`CheckNetIsolation LoopbackExempt -a -n=\"Microsoft.MinecraftUWP_8wekyb3d8bbwe\"`)
+    ]).toString('base64');
 }
