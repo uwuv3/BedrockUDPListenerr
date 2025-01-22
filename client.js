@@ -89,23 +89,12 @@ class ClientSide {
         }
     }
     onMcPacket(packet) {
-        this.server.write(makePacket("packetmcp",packet), (err) => {if(!err) console.log("Packet sended") })
+        this.server.write(makePacket("packetmcpe",packet), (err) => {if(!err) console.log("Packet sended") })
     }
     listenOnUDPPort(port) {
         let lastMessage = Date.now();
         const server = dgram.createSocket('udp4');
-    
-        setInterval(() => {
-            if (lastMessage < Date.now()) {
-                try {
-                    server.close();
-                    this.findMCPE();
-                } catch (error) {
-                    console.error("Socket kapatılamadı: ", error);
-                }
-            }
-        }, 2000);
-    
+
         server.on('listening', () => {
             const address = server.address();
             console.debug(`Listening on UDP port ${JSON.stringify(address)}`);
