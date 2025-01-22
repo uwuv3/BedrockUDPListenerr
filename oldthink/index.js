@@ -56,7 +56,6 @@ const socket = new net.Socket();
             const decodedBuffer = Buffer.from(msg.toString(), 'base64');
             const header = decodedBuffer.subarray(0, 10);
             const packet = decodedBuffer.subarray(10);
-
             if (header.toString() === "packetwhor") {
                 console.log("Sen kimsin lan");
                 process.exit();
@@ -67,7 +66,6 @@ const socket = new net.Socket();
             }
 
             if (decodedBuffer.toString() === "ping") {
-                console.log("niggers")
                 resolve();
             }
         });
@@ -79,6 +77,7 @@ const socket = new net.Socket();
 
         socket.on('close', () => {
             console.log('Bağlantı kapandı');
+            process.exit()
         });
 
         setTimeout(() => {

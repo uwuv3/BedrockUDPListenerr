@@ -1,77 +1,66 @@
 const net = require('net');
 const port = 9999;
-let addresses = new Set();
-
-const server = net.createServer((socket) => {
-    console.log(`Yeni bir bağlantı: ${socket.remoteAddress}:${socket.remotePort}`);
-
-    socket.on('data', (data) => {
-        console.log(`Alınan mesaj: ${data} ${socket.remoteAddress}:${socket.remotePort}`);
-
+class ServerSide {
+    constructor() {
+        this.sockets = new Set();
+        this.createServer()
+    }
+    /**
+     * 
+     * @param {net.Socket} socket 
+     * @param {*} data 
+     */
+    onSocketData(socket, data) {
         const decodedBuffer = Buffer.from(data.toString(), 'base64');
         const header = decodedBuffer.subarray(0, 10);
         const packet = decodedBuffer.subarray(10);
-
-        if (header.toString() === "pakethello") {
-            if (addresses.has(`${socket.remoteAddress}:${socket.remotePort}`)) return;
-            addresses.add(`${socket.remoteAddress}:${socket.remotePort}`);
-
-            socket.write(Buffer.from('ping').toString('base64'), (err) => {
-                if (err) console.error(err);
-                else console.log('Cevap gönderildi');
+         if(header.toString() == "clientconn") {
+            socket.write(makePacket("yenurom"),()=>{
+                this.sockets.add(socket);
+                console.log(`[SERVER] New user`);
+            })
+         }  if(header.toString() == "getusers") {
+            if(!this.sockets.has(socket)) return socket.write(makePacket("whoareyou"));
+            socket.write(makePacket("userslist"),()=>{
+                this.sockets.add(socket);
+                console.log(`[SERVER] New user`);
+            })
+         }
+    }
+    createServer() {
+        if (this.server && this.server.destroyed) return;
+        this.server = net.createServer((socket) => {
+            console.log(`[SERVER] New Connection: ${socket.remoteAddress}:${socket.remotePort}`);
+            socket.on("data", (data) => {
+                this.onSocketData(socket, data)
+            });
+            socket.on('error', (err) => {
+                console.error(`Bağlantı hatası: ${err.message}`);
             });
 
-        } else if (header.toString() === "packetsend") {
-            if (!addresses.has(`${socket.remoteAddress}:${socket.remotePort}`)) {
-                const buffer = Buffer.concat([
-                    Buffer.from("packetwhor")
-                ]);
-                socket.write(buffer.toString('base64'), (err) => {
-                    if (err) console.error(err);
-                    else console.log('Kim bu la');
-                });
-                return;
-            }
-
-            console.log('Header:', header.toString());
-            console.log('Packet:', packet.toString());
-
-            addresses.forEach((address) => {
-                const [remoteAddress, remotePort] = address.split(':');
-                if (`${socket.remoteAddress}:${socket.remotePort}` === address) return;
-
-                const buffer = Buffer.concat([
-                    Buffer.from("packetgent"),
-                    Buffer.from(packet)
-                ]);
-
-                // Yeni bir TCP soket bağlantısı aç
-                const client = net.createConnection({ host: remoteAddress, port: remotePort }, () => {
-                    client.write(buffer.toString('base64'), (err) => {
-                        if (err) console.error(err);
-                        else console.log('Mesaj iletildi');
-                    });
-                });
-
-                client.on('error', (err) => {
-                    console.error(`Soket hatası: ${err.message}`);
-                });
-
-                client.end();
+            socket.on('end', () => {
+                console.log(`Bağlantı kapandı: ${socket.remoteAddress}:${socket.remotePort}`);
+                if (this.sockets.has(socket)) this.sockets.delete(socket);
             });
-        }
-    });
+        });
+        this.server.listen(port);
+        this.server.on("close", () => {
+            console.log("[SERVER] Socket Closed, re-trying after 1 second");
+            setTimeout(() => {
+                this.sockets = new Set();
+                this.createServer();
+            }, 1000)
+        })
+    }
+}
+new ServerSide();
 
-    socket.on('error', (err) => {
-        console.error(`Bağlantı hatası: ${err.message}`);
-    });
-
-    socket.on('end', () => {
-        console.log(`Bağlantı kapandı: ${socket.remoteAddress}:${socket.remotePort}`);
-        addresses.delete(`${socket.remoteAddress}:${socket.remotePort}`);
-    });
-});
-
-server.listen(port, () => {
-    console.log(`Sunucu ${port} portunda dinleniyor...`);
-});
+function makePacket(name, msg) {
+    if (name.length > 10) return console.log(`[PACKET] ${name} is not defined`);
+    if (!msg) msg = "none";
+    const buffer = Buffer.concat([
+        Buffer.from(name),
+        Buffer.from(msg)
+    ]);
+    return buffer.toString("base64")
+}
